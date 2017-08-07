@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Hosts parser</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <style>
+        #file_select_error {
+            background-color: red;
+            border: 1px red;
+        }
+
+        select {
+            min-width: 60px;
+        }
+        /*#file {*/
+            /*background-color: n;*/
+            /*border: 1px red;*/
+        /*}*/
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="col-md-4 col-md-offset-8"><a href="/parser">Return to default form</a></div>
+</div>
+<div class="container">
+    <h2 style="text-align: center">Parsing info</h2>
+    <!--class="form-horizontal" method="post" -->
+    <form class="form-horizontal" method="post" id="form" onsubmit="event.preventDefault()">
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="file">Selected csv:</label>
+            <div class="col-sm-3">
+                <!--<input type="file" id="file" name="file" style="display: none;"></input>-->
+                <input type="file" id="file" name="file"></input>
+                <!--<input type="file" id="selectedFile" style="display: none;" />-->
+                <!--<input type="button" value="Browse..." onclick="document.getElementById('file').click();" />-->
+            </div>
+            <div  class="col-sm-2" style="visibility:hidden" id="file_select_error">Wrong file type selected</div>
+        </div>
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="hosts_column">Hosts column:</label>
+            <div class="col-sm-10">
+                <select id="hosts_column" name="hosts_column"></select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="phones_column">Phones column:</label>
+            <div class="col-sm-10">
+                <select id="phones_column" name="phones_column"></select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="emails_column">Emails column:</label>
+            <div class="col-sm-10">
+                <select id="emails_column" name="emails_column"></select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="keywords_checkbox">Use default keywords:</label>
+            <div class="col-sm-10">
+                <input type="checkbox" id="keywords_checkbox" name="keywords_checkbox" checked></input>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="keywords">Keywords:</label>
+            <div class="col-sm-10">
+                <textarea style="resize: none" class="form-control" id="keywords"
+                          placeholder="Specify keywords for links searching" name="keywords" disabled></textarea>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="depth">Parsing depth:</label>
+            <div class="col-sm-10">
+                <input type="number" id="depth" name="depth" value="0" min="0" max="10"></input>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="col-sm-offset-2 col-sm-10">
+                <button type="submit" class="btn btn-default">Start</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="control-label col-sm-2" for="depth">Current jobs:</label>
+            <div class="col-sm-10">
+                <!--<textarea style="resize: none; user-select: none" class="form-control" type="text" id="parsed_lines" readonly placeholder="There is no work"></textarea>-->
+                <textarea style="resize: none; user-select: none; min-height: 160px" class="form-control" type="text" id="parsed_lines" readonly placeholder="There is no work"></textarea>
+            </div>
+        </div>
+
+    </form>
+    <div class="container">
+        <h2>Completed files</h2>
+        <div class="list-group" id="ready-files">
+            <!--<a href="#" class="list-group-item">First item</a>-->
+            <!--<a href="#" class="list-group-item">Second item</a>-->
+            <!--<a href="#" class="list-group-item">Third item</a>-->
+        </div>
+    </div>
+    <div ></div>
+</div>
+<script src="https://gudhub.com/parser/formClasses.js"></script>
+<script>
+  class Form {
+    constructor(formId) {
+      this.keyWordsControl = new KeyWordsControl('keywords', 'keywords_checkbox');
+      this.csvControl = new CSVFileControl('file', 'hosts_column', 'phones_column', 'emails_column', 'file_select_error', true);
+      this.depthInput = new InputControl('depth');
+      this.form = document.getElementById(formId);
+      this.form.addEventListener("submit", () => this.onStart());
+    }
+
+    onStart() {
+      let self = this;
+      let api = '/parserapi/csv-parsing';
+
+      let formData = new FormData();
+      formData.append('file', this.csvControl.getFile());
+      formData.append('columns', JSON.stringify(this.csvControl.getColumns()));
+      formData.append('keywords', this.keyWordsControl.getValue());
+      formData.append('depth', this.depthInput.getValue());
+
+      $.ajax({
+        url: api,
+        type: "POST",
+        data: formData,
+        processData: false,
+        contentType: false,
+//        success: function(data) {
+////            get jobid
+////          self.jobid=25;
+//        }
+      });
+
+    }
+
+  }
+
+  let form = new Form('form');
+
+
+  class FileList {
+    constructor(rootElId, filesListApi, deleteFileApi) {
+      this.rootEl = document.getElementById(rootElId);
+      this.completedFilesApi = filesListApi;
+      this.deleteFileApi = deleteFileApi;
+    }
+
+    update(data) {
+      let self = this;
+      $.ajax({
+        url: self.completedFilesApi,
+        type: 'GET',
+        success: function(data){
+          let html = '';
+          JSON.parse(data).forEach(function(filename) {
+            html +=
+              `<div class="list-group-item clearfix">
+                  <a href="parsedfiles/${filename}">${filename}</a>
+                  <button onclick="fileList.removeFile('${filename}')" class="btn btn-default pull-right" type="submit">Delete</button>
+               </div>`;
+          });
+          self.rootEl.innerHTML = html || '<div class="list-group-item clearfix">List is empty</div>';
+
+        },
+        error: function(data) {
+          self.rootEl.innerHTML = '<div class="list-group-item clearfix">Error occured while loading file list</div>';
+        }
+      });
+    }
+
+    removeFile(filename) {
+      let self = this;
+
+      let formData = new FormData();
+      formData.append('filename', filename);
+      $.ajax({
+        url: self.deleteFileApi,
+        data: formData,
+        type: 'POST',
+        processData: false,
+        contentType: false,
+        success: function(){
+          self.update();
+        },
+        error: function(data) {
+
+        }
+      });
+    }
+  }
+
+//  class CurrentJobs {
+//    constructor(el, api) {
+//      this.el = document.getElementById(el);
+//      this.api = api;
+//    }
+//
+//    update(data) {
+//      let dataObject = JSON.parse(data);
+//      if (!dataObject.length) {
+//        responseElement.value = 'There is no work now';
+//      } else {
+//        responseElement.value = dataObject.reduce(function(reduced, curr, index) {
+//          if (index != 0) {
+//            return reduced + curr.file + '\n' ;
+//          } else {
+//            return reduced + curr.file + ' - ' + (curr.linesCompleted) + ' line(s) completed from ' + (curr.linesCount) + '\n' ;
+//
+//          }
+//        }, '');
+//      }
+//    }
+//  }
+
+
+  let fileList = new FileList('ready-files', '/parserapi/finished-files', '/parserapi/remove-file');
+
+//  let jobs = new CurrentJobs('parsed_lines');
+
+  let checkStatusApi = '/parserapi/csv-active-jobs';
+  let responseElement = document.getElementById('parsed_lines');
+
+  setInterval(function () {
+
+    $.ajax({
+      url: checkStatusApi,
+      type: 'GET',
+      success: function(data){
+        let dataObject = JSON.parse(data);
+        if (!dataObject.length) {
+          responseElement.value = 'There is no work now';
+        } else {
+          responseElement.value = dataObject.reduce(function(reduced, curr, index) {
+            if (index != 0) {
+
+                return reduced + curr.file + '\n' ;
+            } else {
+                return reduced + curr.file + ' - ' + (curr.linesCompleted) + ' line(s) completed from ' + (curr.linesCount) + '\n' ;
+
+            }
+          }, '');
+        }
+        fileList.update();
+      },
+      error: function(data) {
+        responseElement.value = 'Server responds with error!';
+      }
+    });
+  }, 3000);
+
+//
+//  var eventSource = new EventSource("parserapi/subscribe");
+//  eventSource.onmessage = function (e) {
+//    fileList.update(e.data);
+//    jobs.update(e.data);
+//  };
+
+</script>
+
+</body>
+</html>

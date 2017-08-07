@@ -1,0 +1,19 @@
+{
+  "name": "http_parser",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.1",
+    "csv-write-stream": "^2.0.0",
+    "formidable": "^1.1.1",
+    "node-phantom": "^0.2.5",
+    "phantom": "^4.0.4"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
