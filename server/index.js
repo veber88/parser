@@ -35,7 +35,137 @@ function getColumns(line, columnDelimiter, quote) {
   }, []);
 }
 
+function parseLine(line, requestObject, validCsvWriter, parseFailedCsvWriter) {
+  let hostRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&/=]*)/igm,
+    columns = JSON.parse(requestObject.fields.columns);
+  return new Promise((resolve, reject) => {
+    line = lineCorrection(line);
+
+    let lineColumns = getColumns(line, ',', '"'), hostsColumnSpecified = true, hosts;
+
+    if ((lineColumns.length - 1 < Number(columns.hostsColumn))) {
+      hostsColumnSpecified = false;
+    } else {
+      hosts = lineColumns[Number(columns.hostsColumn)].match(hostRegex);
+    }
+
+
+    if (hostsColumnSpecified && hosts && hosts.length) {
+
+      return Promise.race([
+        parse(hosts, requestObject.fields.keywords.split(',').map((key) => key.trim()), Number(requestObject.fields.depth)),
+        new Promise((resolve, reject) => {
+          setTimeout(() => {
+            reject();
+          }, 120000 * hosts.length)
+        })
+      ])
+        .then((result) => {
+          lineColumns[columns.phonesColumn] = result.phones.join(',');
+          lineColumns[columns.emailsColumn] = result.emails.join(',');
+          return lineColumns;
+        }, () => {
+          reject();
+        })
+        .then((csvLineInArr) => {
+          validCsvWriter.write(csvLineInArr, () => {
+            requestObject.linesCompleted++;
+            resolve();
+          });
+        }, () => {
+          parseFailedCsvWriter.write(lineColumns, () => {
+            requestObject.failed_parsing_count++;
+            requestObject.linesCompleted++;
+            resolve();
+          });
+        });
+    } else {
+      validCsvWriter.write(lineColumns, () => {
+        requestObject.linesCompleted++;
+        resolve();
+      });
+    }
+  });
+}
+
 let emitter = new EventEmitter();
+emitter.on('get_next_file', function () {
+
+  if (!filesInProcess.length) return;
+  let requestObject = filesInProcess[0];
+
+  let validCsvWriter, parseFailedCsvWriter;
+
+  let csvColsCount;
+
+
+  const rl = readline.createInterface({
+    input: fs.createReadStream(requestObject.full_file.file.path)
+  });
+
+  if (!fs.existsSync('../processedFiles')) {
+    fs.mkdirSync('../processedFiles');
+  }
+
+  let firstLine = true, linesBuffer = [],
+    validRowsoutputStreamFile = fs.createWriteStream('../processedFiles/' + requestObject.file + '.temp'),
+    parseFailedOutputStreamFile = fs.createWriteStream('../processedFiles/parsing_failed_' + requestObject.file + '.temp');
+
+  rl.on('line', (line) => {
+    if (!firstLine) {
+      requestObject.linesCount++;
+      linesBuffer.push(line);
+    } else {
+      csvColsCount = getColumns(line, ',', '"').length;
+      validCsvWriter = csvWriter({
+        headers: getColumns(line, ',', '"'),
+        sendHeaders: false,
+        separator: ',',
+        newline: '\n'
+      });
+      parseFailedCsvWriter = csvWriter({
+        headers: getColumns(line, ',', '"'),
+        sendHeaders: false,
+        separator: ',',
+        newline: '\n'
+      });
+      validCsvWriter.pipe(validRowsoutputStreamFile);
+      parseFailedCsvWriter.pipe(parseFailedOutputStreamFile);
+      validCsvWriter.write(getColumns(line, ',', '"'));
+      parseFailedCsvWriter.write(getColumns(line, ',', '"'));
+      firstLine = false;
+    }
+  });
+
+  rl.on('close', () => {
+    linesBuffer
+      .reduce((previousPromise, currentLine) => {
+        return previousPromise
+          .then(() => parseLine(currentLine, requestObject, validCsvWriter, parseFailedCsvWriter))
+          .catch((e) => parseLine(currentLine, requestObject, validCsvWriter, parseFailedCsvWriter));
+      }, Promise.resolve())
+      .then(() => {
+        validRowsoutputStreamFile.end();
+        parseFailedOutputStreamFile.end();
+        validCsvWriter.end();
+        parseFailedCsvWriter.end();
+        fs.renameSync('../processedFiles/' + requestObject.file + '.temp', '../processedFiles/' + requestObject.file);
+        if (requestObject.failed_parsing_count) {
+          fs.renameSync('../processedFiles/parsing_failed_' + requestObject.file + '.temp', '../processedFiles/parsing_failed_' + requestObject.file);
+        } else {
+          fs.unlinkSync('../processedFiles/parsing_failed_' + requestObject.file + '.temp');
+        }
+        filesInProcess.splice(filesInProcess.indexOf(requestObject), 1);
+        spawnSync('killall', ['phantomjs'], {timeout: 5000});
+        emitter.emit('get_next_file');
+      });
+  });
+});
+
+
+
+
+
 
 http.createServer(function (request, response) {
   response.setHeader('Access-Control-Allow-Origin', 'https://gudhub.com');
@@ -44,136 +174,9 @@ http.createServer(function (request, response) {
     case '/csv-parsing':
       var form = new formidable.IncomingForm();
       form.parse(request, function (err, fields, files) {
-        let responseObject = {file: files.file.name, linesCompleted: 0, linesCount: 0, failed_parsing_count: 0};
-        filesInProcess.push(responseObject);
-
-        let validCsvWriter, parseFailedCsvWriter,
-          columns = JSON.parse(fields.columns);
-
-        let csvColsCount;
-
-        emitter.on('get_next_file', function() {
-          if (filesInProcess.indexOf(responseObject) == 0) {
-            const rl = readline.createInterface({
-              input: fs.createReadStream(files.file.path)
-            });
-
-            if (!fs.existsSync('../processedFiles')) {
-              fs.mkdirSync('../processedFiles');
-            }
-
-            let firstLine = true, linesBuffer = [],
-              validRowsoutputStreamFile = fs.createWriteStream('../processedFiles/' + files.file.name + '.temp'),
-              parseFailedOutputStreamFile = fs.createWriteStream('../processedFiles/parsing_failed_' + files.file.name + '.temp');
-
-            rl.on('line', (line) => {
-              if (!firstLine) {
-                responseObject.linesCount++;
-                linesBuffer.push(line);
-              } else {
-                csvColsCount = getColumns(line, ',', '"').length;
-                validCsvWriter = csvWriter({headers: getColumns(line, ',', '"'), sendHeaders: false, separator: ',', newline: '\n'});
-                parseFailedCsvWriter = csvWriter({headers: getColumns(line, ',', '"'), sendHeaders: false, separator: ',', newline: '\n'});
-                validCsvWriter.pipe(validRowsoutputStreamFile);
-                parseFailedCsvWriter.pipe(parseFailedOutputStreamFile);
-                validCsvWriter.write(getColumns(line, ',', '"'));
-                parseFailedCsvWriter.write(getColumns(line, ',', '"'));
-                firstLine = false;
-              }
-            });
-
-            rl.on('close', () => {
-              linesBuffer
-                .reduce((previousPromise, currentLine) => {
-                  return previousPromise.then(() => parseLine(currentLine));
-                }, Promise.resolve())
-                .then(() => {
-                  validRowsoutputStreamFile.end();
-                  parseFailedOutputStreamFile.end();
-                  validCsvWriter.end();
-                  parseFailedCsvWriter.end();
-                  fs.renameSync('../processedFiles/' + files.file.name + '.temp', '../processedFiles/' + files.file.name);
-                  if (responseObject.failed_parsing_count) {
-                    fs.renameSync('../processedFiles/parsing_failed_' + files.file.name + '.temp', '../processedFiles/parsing_failed_' + files.file.name);
-                  } else {
-                    fs.unlinkSync('../processedFiles/parsing_failed_' + files.file.name + '.temp');
-                  }
-                  filesInProcess.splice(filesInProcess.indexOf(responseObject), 1);
-                  spawnSync('killall', 'phantomjs', {timeout: 5000});
-                  emitter.emit('get_next_file');
-                });
-            });
-          }
-        });
-
+        filesInProcess.push({file: files.file.name, linesCompleted: 0, linesCount: 0, failed_parsing_count: 0, fields: fields, full_file: files});
         if (filesInProcess.length == 1) {
           emitter.emit('get_next_file');
-        }
-
-
-        let hostRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&/=]*)/igm;
-
-        // function simpleParses(line) {
-        //   line = lineCorrection(line);
-        //   let lineColumns = getColumns(line, ',', '"');
-        //   return new Promise((resolve) => {
-        //     validCsvWriter.write(lineColumns, () => {
-        //       responseObject.linesCompleted++;
-        //       resolve();
-        //     });
-        //   });
-        // }
-
-        function parseLine(line) {
-          return new Promise((resolve) => {
-            line = lineCorrection(line);
-
-            let lineColumns = getColumns(line, ',', '"'), hostsColumnSpecified = true, hosts;
-
-            if ((lineColumns.length - 1 < Number(columns.hostsColumn))) {
-              hostsColumnSpecified = false;
-            } else {
-              hosts = lineColumns[Number(columns.hostsColumn)].match(hostRegex);
-            }
-
-
-            if (hostsColumnSpecified && hosts && hosts.length) {
-
-              return Promise.race([
-                parse(hosts, fields.keywords.split(',').map((key) => key.trim()), Number(fields.depth)),
-                new Promise((resolve, reject) => {
-                  setTimeout(() => {
-                    reject();
-                  }, 60000 * hosts.length)
-                })
-              ])
-                .then((result) => {
-                  lineColumns[columns.phonesColumn] = result.phones.join(',');
-                  lineColumns[columns.emailsColumn] = result.emails.join(',');
-                  return lineColumns;
-                }, () => {
-                  reject();
-                })
-                .then((csvLineInArr) => {
-                  validCsvWriter.write(csvLineInArr, () => {
-                    responseObject.linesCompleted++;
-                    resolve();
-                  });
-                }, () => {
-                  parseFailedCsvWriter.write(lineColumns, () => {
-                    responseObject.failed_parsing_count++;
-                    responseObject.linesCompleted++;
-                    resolve();
-                  });
-                });
-            } else {
-              validCsvWriter.write(lineColumns, () => {
-                responseObject.linesCompleted++;
-                resolve();
-              });
-            }
-          });
-
         }
         response.end();
       });

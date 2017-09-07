@@ -107,7 +107,7 @@ class Page {
           phantomjsInstance.exit().then(() => {
             resolve('');
           });
-        }, 5000);
+        }, 20000);
       })]);
       // await page.open(this.url);
       // let content = await page.property('content');
