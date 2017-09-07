@@ -100,7 +100,7 @@ class Page {
     try {
       await Page.chromeInstance;
       page = await Page.chromeInstance.newPage();
-      await page.goto(this.url, {waitUntil: 'networkidle'});
+      await page.goto(this.url, {waitUntil: 'load'});
       let data = await page.content();
       await page.close();
       return data;
