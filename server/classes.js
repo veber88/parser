@@ -1,5 +1,5 @@
 const {URL} = require('url');
-const phantom = require('phantom');
+const puppeteer = require('puppeteer');
 
 class checkCurrentHost {
   constructor(currentHostURL) {
@@ -92,28 +92,18 @@ class Page {
   }
 
   async getContent() {
-    let page, content, phantomjsInstance;
+    let page, content, chromeHeadless;
     try {
-      phantomjsInstance = await phantom.create();
-      page = await phantomjsInstance.createPage();
+      chromeHeadless = await puppeteer.launch();
+      page = await chromeHeadless.newPage();
 
       return await Promise.race([(async () => {
-        await page.open(this.url);
-        let data = await page.property('content');
-        await phantomjsInstance.exit();
+        await page.goto(this.url, {waitUntil: 'networkidle'});
+        data = await page.content();
         return data;
-      })(), new Promise((resolve) => {
-        setTimeout(() => {
-          phantomjsInstance.exit().then(() => {
-            resolve('');
-          });
-        }, 20000);
-      })]);
-      // await page.open(this.url);
-      // let content = await page.property('content');
-      // return content;
+      })()]);
     } catch (e) {
-      await phantomjsInstance.exit();
+      await chromeHeadless.close();
       return '';
     }
   }
