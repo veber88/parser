@@ -91,22 +91,24 @@ class Page {
     this.url = url;
   }
 
+  static async chromeHeadlessLaunch() {
+    Page.chromeInstance = await puppeteer.launch({args: ['--no-sandbox', '--disable-setuid-sandbox']});
+  }
+
   async getContent() {
     let page, content, chromeHeadless;
     try {
-      chromeHeadless = await puppeteer.launch();
-      page = await chromeHeadless.newPage();
-
-      return await Promise.race([(async () => {
-        await page.goto(this.url, {waitUntil: 'networkidle'});
-        data = await page.content();
-        return data;
-      })()]);
+      await Page.chromeInstance;
+      page = await Page.chromeInstance.newPage();
+      await page.goto(this.url, {waitUntil: 'networkidle'});
+      let data = await page.content();
+      return data;
     } catch (e) {
-      await chromeHeadless.close();
       return '';
     }
   }
 }
+
+Page.chromeHeadlessLaunch();
 
 module.exports = {pathNode: pathNode, checkCurrentHost: checkCurrentHost, Page: Page};
