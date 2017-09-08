@@ -1,3 +1,3 @@
-.idea/*
-node_modules/*
-processedFiles/*
+.idea/
+server/node_modules/
+processedFiles/

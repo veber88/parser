@@ -1,5 +1,5 @@
 const {URL} = require('url');
-const phantom = require('phantom');
+const puppeteer = require('puppeteer');
 
 class checkCurrentHost {
   constructor(currentHostURL) {
@@ -91,32 +91,25 @@ class Page {
     this.url = url;
   }
 
-  async getContent() {
-    let page, content, phantomjsInstance;
-    try {
-      phantomjsInstance = await phantom.create();
-      page = await phantomjsInstance.createPage();
+  static async chromeHeadlessLaunch() {
+    Page.chromeInstance = await puppeteer.launch({args: ['--no-sandbox', '--disable-setuid-sandbox']});
+  }
 
-      return await Promise.race([(async () => {
-        await page.open(this.url);
-        let data = await page.property('content');
-        await phantomjsInstance.exit();
-        return data;
-      })(), new Promise((resolve) => {
-        setTimeout(() => {
-          phantomjsInstance.exit().then(() => {
-            resolve('');
-          });
-        }, 20000);
-      })]);
-      // await page.open(this.url);
-      // let content = await page.property('content');
-      // return content;
+  async getContent() {
+    let page, content, chromeHeadless;
+    try {
+      await Page.chromeInstance;
+      page = await Page.chromeInstance.newPage();
+      await page.goto(this.url, {waitUntil: 'load'});
+      let data = await page.content();
+      await page.close();
+      return data;
     } catch (e) {
-      await phantomjsInstance.exit();
       return '';
     }
   }
 }
+
+Page.chromeHeadlessLaunch();
 
 module.exports = {pathNode: pathNode, checkCurrentHost: checkCurrentHost, Page: Page};

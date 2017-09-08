@@ -66,6 +66,7 @@ function parseLine(line, requestObject, validCsvWriter, parseFailedCsvWriter) {
           return lineColumns;
         }, () => {
           reject();
+          return Promise.reject();
         })
         .then((csvLineInArr) => {
           validCsvWriter.write(csvLineInArr, () => {
@@ -156,7 +157,6 @@ emitter.on('get_next_file', function () {
           fs.unlinkSync('../processedFiles/parsing_failed_' + requestObject.file + '.temp');
         }
         filesInProcess.splice(filesInProcess.indexOf(requestObject), 1);
-        spawnSync('killall', ['phantomjs'], {timeout: 5000});
         emitter.emit('get_next_file');
       });
   });
