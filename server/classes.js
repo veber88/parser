@@ -102,10 +102,11 @@ class Page {
       page = await Page.chromeInstance.newPage();
       await page.goto(this.url, {waitUntil: 'load'});
       let data = await page.content();
-      await page.close();
       return data;
     } catch (e) {
       return '';
+    } finally {
+      page.close();
     }
   }
 }
