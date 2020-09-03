@@ -7,7 +7,7 @@
     "cheerio": "^1.0.0-rc.1",
     "csv-write-stream": "^2.0.0",
     "formidable": "^1.1.1",
-    "puppeteer": "^0.10.2"
+    "puppeteer": "^1.13.0"
   },
   "author": "",
   "license": "ISC"
